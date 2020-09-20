@@ -1,2 +1,12 @@
 (executable
- (name timeteller))
+ (public_name timeteller)
+ (name timeteller)
+ (libraries daypack-lib
+            cmdliner
+            ptime.clock.os
+            oseq
+            lwt
+            lwt.unix
+            )
+ (preprocess (pps lwt_ppx))
+ )
