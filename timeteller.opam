@@ -1,0 +1,21 @@
+opam-version: "2.0"
+synopsis: "Server for answering time expression query"
+description: """
+"""
+maintainer: "Darren Ldl <darrenldldev@gmail.com>"
+authors: "Daypack developers"
+license: "MIT"
+homepage: "https://github.com/daypack-dev/timeteller"
+bug-reports: "https://github.com/daypack-dev/timeteller/issues"
+dev-repo: "git+https://github.com/daypack-dev/timeteller"
+depends: [
+  "ocaml" {>= "4.08.0"}
+  "dune" {>= "2.6"}
+  "ptime"
+  "cmdliner"
+  "oseq"
+  "daypack-lib" {= "0.0.5"}
+]
+build: [
+  ["dune" "build" "-p" name "-j" jobs]
+]
