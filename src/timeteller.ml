@@ -1,5 +1,8 @@
 let listen_sockaddr = Unix.(ADDR_INET (inet_addr_any, 9999))
 
+(* let resolve_time_zone_offset_s_via_ip_api_dot_com (sock_addr : Unix.sockaddr) : int Lwt.t =
+ * Lwt_io.with_connection *)
+
 let respond (client_sock_addr : Unix.sockaddr)
     ((ic, oc) : Lwt_io.input_channel * Lwt_io.output_channel) : unit Lwt.t =
   let%lwt input = Lwt_io.read ic in
@@ -9,7 +12,7 @@ let respond (client_sock_addr : Unix.sockaddr)
   Lwt.return ()
 
 let server : Lwt_io.server Lwt.t =
-  Lwt_io.establish_server_with_client_address ~no_close:true listen_sockaddr
+  Lwt_io.establish_server_with_client_address listen_sockaddr
     respond
 
 let loop_until_keyword (ic : Lwt_io.input_channel) : unit Lwt.t =
