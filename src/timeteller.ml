@@ -20,7 +20,7 @@ let respond (client_sock_addr : Unix.sockaddr)
   let%lwt input = Lwt_io.read ic in
   let%lwt _ = resolve_time_zone_offset_s_via_ip_api_dot_com client_sock_addr in
   let%lwt () = Lwt_io.printf "Input:\n" in
-  let%lwt () = Lwt_io.printf "%s\n" input in
+  let%lwt () = Lwt_io.printf "|%s|\n" input in
   let%lwt () = Lwt_io.write oc "abcd" in
   let%lwt () = Lwt_io.flush oc in
   Lwt.return ()
