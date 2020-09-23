@@ -8,6 +8,9 @@
             oseq
             lwt
             lwt.unix
+            cohttp
+            cohttp-lwt-unix
+            yojson
             )
  (preprocess (pps lwt_ppx))
  )
