@@ -4,16 +4,46 @@ open Cohttp_lwt_unix
 
 let listen_sockaddr = Unix.(ADDR_INET (inet_addr_any, 9999))
 
-let look_up_time_zone_offset_s_via_ip_api_dot_com : Unix.sockaddr -> (int, string) Result.t Lwt.t =
+let look_up_time_zone_offset_s : Unix.sockaddr -> (int, string) Result.t Lwt.t =
   let cache = Tz_offset_cache.create ~random:true 1000 in
+  let last_batch_lookup_start_timestamp = ref None in
+  let last_batch_lookup_count = ref 0 in
+  let lock = Lwt_mutex.create () in
   fun sock_addr ->
   match sock_addr with
   | Unix.ADDR_UNIX _ -> Lwt.return (Error "Address is a unix address")
   | Unix.ADDR_INET (addr, _port) ->
     let addr_str = Unix.string_of_inet_addr addr in
+    let%lwt () = Lwt_mutex.lock lock in
     match Tz_offset_cache.find addr_str cache with
-    | Some offset -> Lwt.return (Ok offset)
+    | Some offset ->
+      Lwt_mutex.unlock lock;
+      Lwt.return (Ok offset)
     | None ->
+      let cur_time = Daypack_lib.Time.Current.cur_unix_second () in
+      let proceed =
+        match !last_batch_lookup_start_timestamp with
+        | None ->
+          last_batch_lookup_start_timestamp := Some cur_time;
+          last_batch_lookup_count := 0;
+          true
+        | Some last_lookup ->
+          if Int64.sub cur_time last_lookup >= Config.batch_window_in_seconds then (
+            last_batch_lookup_start_timestamp := Some cur_time;
+            last_batch_lookup_count := 0;
+            true
+          )
+          else (
+            if !last_batch_lookup_count < Config.batch_max_count then (
+              last_batch_lookup_count := !last_batch_lookup_count + 1;
+              true
+            ) else (
+              false
+            )
+          )
+      in
+      Lwt_mutex.unlock lock;
+      if proceed then (
       let uri = Uri.of_string ("http://ip-api.com/json/" ^ addr_str ^ "?fields=offset") in
       let%lwt resp, body = Client.get uri in
       let%lwt body_str = Cohttp_lwt.Body.to_string body in
@@ -33,25 +63,30 @@ let look_up_time_zone_offset_s_via_ip_api_dot_com : Unix.sockaddr -> (int, strin
                   if k = "offset" then
                     (match v with
                      | `Int offset ->
-                       Tz_offset_cache.add addr_str offset cache;
                        Some offset
                      | _ -> None
                     )
                   else
                     None
                 ) l with
-            | [offset] -> Lwt.return (Ok offset)
+            | [offset] ->
+              let%lwt () = Lwt_mutex.lock lock in
+              Tz_offset_cache.add addr_str offset cache;
+              Lwt_mutex.unlock lock;
+              Lwt.return (Ok offset)
             | _ ->
               Lwt.return (Error "Failed to interpret JSON response from ip-api.com")
           )
         | _ ->
           Lwt.return (Error "Failed to interpret JSON response from ip-api.com")
+    ) else
+        Lwt.return (Error ("Too many requests in past " ^ Int64.to_string Config.batch_window_in_seconds ^ " seconds"))
 
 let respond (client_sock_addr : Unix.sockaddr)
     ((ic, oc) : Lwt_io.input_channel * Lwt_io.output_channel) : unit Lwt.t =
   let%lwt input = Lwt_io.read ~count:Config.max_input_char_count ic in
   let%lwt () = Lwt_io.printf "Input: |%s|\n" input in
-  let%lwt offset_res = resolve_time_zone_offset_s_via_ip_api_dot_com client_sock_addr in
+  let%lwt offset_res = look_up_time_zone_offset_s client_sock_addr in
   match offset_res with
   | Error msg -> Lwt_io.write oc (Printf.sprintf "Error during time zone offset lookup: %s" msg)
   | Ok offset ->
