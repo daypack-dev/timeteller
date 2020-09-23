@@ -98,18 +98,23 @@ let respond (client_sock_addr : Unix.sockaddr)
   let%lwt offset_res = look_up_time_zone_offset_s client_sock_addr in
   match offset_res with
   | Error msg ->
-    Lwt_io.write oc
-      (Printf.sprintf "Error during time zone offset lookup: %s" msg)
+    let%lwt () = Lwt_io.write_line oc
+        (Printf.sprintf "Error during time zone offset lookup: %s" msg) in
+    let%lwt () = Lwt_io.flush oc in
+    Lwt.return_unit
   | Ok offset -> (
       match
         Daypack_lib.Search_param.make_using_years_ahead
           ~search_using_tz_offset_s:offset 100
       with
-      | Error _ -> Lwt_io.write_line oc "Error during search param construction"
+      | Error _ ->
+        let%lwt () = Lwt_io.write_line oc "Error during search param construction" in
+        let%lwt () = Lwt_io.flush oc in
+        Lwt.return ()
       | Ok search_param ->
         let%lwt () = Lwt_io.write oc "abcd" in
         let%lwt () = Lwt_io.flush oc in
-        Lwt.return () )
+        Lwt.return_unit )
 
 let server : Lwt_io.server Lwt.t =
   Lwt_io.establish_server_with_client_address listen_sockaddr respond
