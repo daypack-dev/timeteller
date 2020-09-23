@@ -98,8 +98,10 @@ let respond (client_sock_addr : Unix.sockaddr)
   let%lwt offset_res = look_up_time_zone_offset_s client_sock_addr in
   match offset_res with
   | Error msg ->
-    let%lwt () = Lwt_io.write_line oc
-        (Printf.sprintf "Error during time zone offset lookup: %s" msg) in
+    let%lwt () =
+      Lwt_io.write_line oc
+        (Printf.sprintf "Error during time zone offset lookup: %s" msg)
+    in
     let%lwt () = Lwt_io.flush oc in
     Lwt.return_unit
   | Ok offset -> (
@@ -108,13 +110,60 @@ let respond (client_sock_addr : Unix.sockaddr)
           ~search_using_tz_offset_s:offset 100
       with
       | Error _ ->
-        let%lwt () = Lwt_io.write_line oc "Error during search param construction" in
+        let%lwt () =
+          Lwt_io.write_line oc "Error during search param construction"
+        in
         let%lwt () = Lwt_io.flush oc in
         Lwt.return ()
-      | Ok search_param ->
-        let%lwt () = Lwt_io.write oc "abcd" in
-        let%lwt () = Lwt_io.flush oc in
-        Lwt.return_unit )
+      | Ok search_param -> (
+          match Daypack_lib.Time_expr.of_string input with
+          | Error msg ->
+            let%lwt () = Lwt_io.write_line oc msg in
+            let%lwt () = Lwt_io.flush oc in
+            Lwt.return_unit
+          | Ok e -> (
+              match
+                Daypack_lib.Time_expr.matching_time_slots search_param e
+              with
+              | Error msg ->
+                let%lwt () =
+                  Lwt_io.write_line oc
+                    "Error during search param construction"
+                in
+                let%lwt () = Lwt_io.flush oc in
+                Lwt.return ()
+              | Ok s -> (
+                  match s () with
+                  | Seq.Nil ->
+                    let%lwt () =
+                      Lwt_io.write_line oc "No matching time slots"
+                    in
+                    let%lwt () = Lwt_io.flush oc in
+                    Lwt.return ()
+                  | Seq.Cons _ ->
+                    let str =
+                      s
+                      |> OSeq.take Config.max_time_slot_count_to_send_over
+                      |> Seq.map (fun (x, y) ->
+                          let x =
+                            Daypack_lib.Time.To_string
+                            .yyyymondd_hhmmss_string_of_unix_second
+                              ~display_using_tz_offset_s:(Some offset) x
+                            |> Result.get_ok
+                          in
+                          let y =
+                            Daypack_lib.Time.To_string
+                            .yyyymondd_hhmmss_string_of_unix_second
+                              ~display_using_tz_offset_s:(Some offset) y
+                            |> Result.get_ok
+                          in
+                          Printf.sprintf "[%s, %s)\r\n" x y)
+                      |> List.of_seq
+                      |> String.concat ""
+                    in
+                    let%lwt () = Lwt_io.write oc str in
+                    let%lwt () = Lwt_io.flush oc in
+                    Lwt.return_unit ) ) ) )
 
 let server : Lwt_io.server Lwt.t =
   Lwt_io.establish_server_with_client_address listen_sockaddr respond
